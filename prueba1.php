@@ -1,0 +1,351 @@
+<?php
+// ==========================================
+// 1. CONFIGURACIÓN Y CONEXIÓN A LA BBDD
+// ==========================================
+$host = "localhost";
+$user = "root";
+$pass = "";
+$db   = "sistema_voto";
+
+$conexion = new mysqli($host, $user, $pass, $db);
+
+if ($conexion->connect_error) {
+    die("Error de conexión a la base de datos: " . $conexion->connect_error);
+}
+
+$conexion->set_charset("utf8mb4");
+
+// Variables para el flujo de la aplicación
+$mensaje = "";
+$tipo_mensaje = ""; 
+$alumno = null;
+
+// ==========================================
+// 2. OBTENER INSTANCIA ELECTORAL ACTIVA
+// ==========================================
+$sql_instancia = "SELECT id_instancia, descripcion, anio FROM instancia_electoral WHERE activa = 1 LIMIT 1";
+$res_instancia = $conexion->query($sql_instancia);
+$instancia_activa = $res_instancia ? $res_instancia->fetch_assoc() : null;
+
+// ==========================================
+// 3. PROCESAR HABILITACIÓN AL CUARTO OSCURO
+// ==========================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'habilitar') {
+    $id_padron = intval($_POST['id_padron']);
+    $fecha_actual = date('Y-m-d H:i:s');
+
+    $stmt_update = $conexion->prepare("UPDATE padron_electoral SET estado_voto = 1, fecha_hora_voto = ? WHERE id_padron = ?");
+    $stmt_update->bind_param("si", $fecha_actual, $id_padron);
+    
+    if ($stmt_update->execute()) {
+        $mensaje = "El alumno fue habilitado correctamente. Puede ingresar al cuarto oscuro.";
+        $tipo_mensaje = "exito";
+    } else {
+        $mensaje = "Ocurrió un error al intentar habilitar al alumno en el padrón.";
+        $tipo_mensaje = "error";
+    }
+}
+
+// ==========================================
+// 4. PROCESAR BÚSQUEDA POR DNI
+// ==========================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['dni_busqueda'])) {
+    $dni_ingresado = trim($_POST['dni_busqueda']);
+
+    if (!$instancia_activa) {
+        $mensaje = "No hay ninguna instancia electoral activa configurada en el sistema.";
+        $tipo_mensaje = "error";
+    } else {
+        $id_instancia = $instancia_activa['id_instancia'];
+
+        $stmt = $conexion->prepare("
+            SELECT 
+                a.id_alumno, a.dni, a.nombre, a.apellido, a.curso, a.division,
+                p.id_padron, p.estado_voto, p.fecha_hora_voto
+            FROM alumnos a
+            INNER JOIN padron_electoral p ON a.id_alumno = p.id_alumno
+            WHERE a.dni = ? AND p.id_instancia = ?
+        ");
+        $stmt->bind_param("si", $dni_ingresado, $id_instancia);
+        $stmt->execute();
+        $resultado = $stmt->get_result();
+
+        if ($resultado->num_rows === 0) {
+            $mensaje = "Esta persona no es un alumno registrado o no figura en el padrón de esta elección.";
+            $tipo_mensaje = "error";
+        } else {
+            $alumno = $resultado->fetch_assoc();
+
+            if ($alumno['estado_voto'] == 1) {
+                $mensaje = "Esta persona YA HA VOTADO el día " . date('d/m/Y a las H:i', strtotime($alumno['fecha_hora_voto'])) . " hs.";
+                $tipo_mensaje = "advertencia";
+                $alumno = null; // Se oculta el formulario de habilitación
+            }
+        }
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consulta de Padrón - Centro de Estudiantes</title>
+    <!-- Fuente Roboto -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Roboto', sans-serif;
+        }
+
+        body {
+            background-color: #f4f6f9;
+            color: #333333;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header-instancia {
+            background-color: #1e293b;
+            color: #ffffff;
+            padding: 20px 0;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header-container h1 {
+            font-size: 1.4rem;
+            font-weight: 500;
+        }
+
+        .badge {
+            background-color: #2563eb;
+            color: #ffffff;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            padding: 4px 10px;
+            border-radius: 12px;
+        }
+
+        /* Contenido Principal */
+        .main-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 40px 20px;
+        }
+
+        .card {
+            background: #ffffff;
+            border-radius: 10px;
+            width: 100%;
+            max-width: 600px;
+            padding: 30px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        .card h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 6px;
+        }
+
+        .subtitle {
+            color: #64748b;
+            font-size: 0.95rem;
+            margin-bottom: 24px;
+        }
+
+        /* Formulario de Búsqueda */
+        .search-form {
+            margin-bottom: 24px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-group input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .input-group input:focus {
+            border-color: #2563eb;
+        }
+
+        /* Botones */
+        button {
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            font-weight: 500;
+            font-size: 1rem;
+            transition: background-color 0.2s;
+        }
+
+        .btn-primary {
+            background-color: #2563eb;
+            color: #ffffff;
+            padding: 12px 20px;
+        }
+
+        .btn-primary:hover {
+            background-color: #1d4ed8;
+        }
+
+        .btn-success {
+            background-color: #16a34a;
+            color: #ffffff;
+            width: 100%;
+            padding: 14px;
+            font-size: 1.05rem;
+        }
+
+        .btn-success:hover {
+            background-color: #15803d;
+        }
+
+        /* Alertas */
+        .alert {
+            padding: 14px 16px;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            margin-bottom: 20px;
+            line-height: 1.4;
+        }
+
+        .alert-error {
+            background-color: #fef2f2;
+            color: #991b1b;
+            border-left: 4px solid #ef4444;
+        }
+
+        .alert-advertencia {
+            background-color: #fffbeb;
+            color: #92400e;
+            border-left: 4px solid #f59e0b;
+        }
+
+        .alert-exito {
+            background-color: #f0fdf4;
+            color: #166534;
+            border-left: 4px solid #22c55e;
+        }
+
+        /* Ficha del Alumno */
+        .alumno-card {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .status-tag {
+            display: inline-block;
+            background-color: #dcfce7;
+            color: #15803d;
+            font-size: 0.8rem;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin-bottom: 12px;
+        }
+
+        .alumno-details p {
+            margin-bottom: 8px;
+            font-size: 1rem;
+            color: #334155;
+        }
+
+        .alumno-details {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Encabezado con datos de la Instancia Electoral Activa -->
+    <header class="header-instancia">
+        <div class="header-container">
+            <span class="badge">Elección Activa</span>
+            <h1>
+                <?php 
+                    if ($instancia_activa) {
+                        echo htmlspecialchars($instancia_activa['descripcion']) . " — " . htmlspecialchars($instancia_activa['anio']);
+                    } else {
+                        echo "Sin Instancia Electoral Activa";
+                    }
+                ?>
+            </h1>
+        </div>
+    </header>
+
+    <main class="main-container">
+        <section class="card">
+            <h2>Mesa de Verificación y Control</h2>
+            <p class="subtitle">Ingrese el DNI del estudiante para verificar su habilitación</p>
+
+            <!-- Formulario de Búsqueda -->
+            <form action="index.php" method="POST" class="search-form">
+                <div class="input-group">
+                    <input type="text" name="dni_busqueda" placeholder="Ej: 45123456" required autocomplete="off" autofocus>
+                    <button type="submit" class="btn-primary">Consultar DNI</button>
+                </div>
+            </form>
+
+            <!-- Mensajes del Sistema -->
+            <?php if (!empty($mensaje)): ?>
+                <div class="alert alert-<?php echo $tipo_mensaje; ?>">
+                    <?php echo htmlspecialchars($mensaje); ?>
+                </div>
+            <?php endif; ?>
+
+            <!-- Ficha con Datos del Alumno Encontrado -->
+            <?php if ($alumno): ?>
+                <div class="alumno-card">
+                    <span class="status-tag">Habilitado para Votar</span>
+                    <div class="alumno-details">
+                        <p><strong>DNI:</strong> <?php echo htmlspecialchars($alumno['dni']); ?></p>
+                        <p><strong>Apellido y Nombre:</strong> <?php echo htmlspecialchars($alumno['apellido'] . ', ' . $alumno['nombre']); ?></p>
+                        <p><strong>Curso y División:</strong> <?php echo htmlspecialchars($alumno['curso'] . '° ' . $alumno['division'] . 'ª'); ?></p>
+                    </div>
+
+                    <!-- Botón para Registrar Habilitación y Pasar al Cuarto Oscuro -->
+                    <form action="index.php" method="POST">
+                        <input type="hidden" name="action" value="habilitar">
+                        <input type="hidden" name="id_padron" value="<?php echo $alumno['id_padron']; ?>">
+                        <button type="submit" class="btn-success">Habilitar e Ingresar al Cuarto Oscuro</button>
+                    </form>
+                </div>
+            <?php endif; ?>
+        </section>
+    </main>
+
+</body>
+</html>
