@@ -2,6 +2,8 @@
 // ==========================================
 // 1. CONFIGURACIÓN Y CONEXIÓN A LA BBDD
 // ==========================================
+header('Content-Type: text/html; charset=utf-8');
+
 $host = "localhost";
 $user = "root";
 $pass = "";
@@ -22,45 +24,14 @@ $res_instancia = $conexion->query($sql_instancia);
 $instancia_activa = $res_instancia ? $res_instancia->fetch_assoc() : null;
 
 // ==========================================
-// 3. ENDPOINT AJAX: OBTENER ÚLTIMO HABILITADO
-// ==========================================
-if (isset($_GET['check_alumno']) && $instancia_activa) {
-    header('Content-Type: application/json');
-    $id_instancia = $instancia_activa['id_instancia'];
-
-    // Obtiene el último alumno marcado con estado_voto = 1
-    $stmt = $conexion->prepare("
-        SELECT p.id_padron, a.dni, a.nombre, a.apellido, a.curso, a.division
-        FROM padron_electoral p
-        INNER JOIN alumnos a ON p.id_alumno = a.id_alumno
-        WHERE p.id_instancia = ? AND p.estado_voto = 1
-        ORDER BY p.fecha_hora_voto DESC 
-        LIMIT 1
-    ");
-    $stmt->bind_param("i", $id_instancia);
-    $stmt->execute();
-    $res = $stmt->get_result();
-
-    if ($res->num_rows > 0) {
-        echo json_encode(['status' => 'success', 'data' => $res->fetch_assoc()]);
-    } else {
-        echo json_encode(['status' => 'empty']);
-    }
-    exit;
-}
-
-// ==========================================
-// 4. PROCESAR LA EMISIÓN DEL VOTO
+// 3. PROCESAR LA EMISIÓN DEL VOTO
 // ==========================================
 $voto_registrado = false;
-$nombre_votante = "";
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'confirmar_voto') {
-    $id_lista = intval($_POST['id_lista']); // Si es 0 se toma como voto en blanco
-    $nombre_votante = trim($_POST['nombre_votante']);
-    $id_instancia = $instancia_activa['id_instancia'];
+    $id_lista = intval($_POST['id_lista']);
+    $id_instancia = $instancia_activa ? $instancia_activa['id_instancia'] : 0;
 
-    // Insertar voto anónimo en la tabla votos
     if ($id_lista > 0) {
         $stmt_voto = $conexion->prepare("INSERT INTO votos (id_instancia, id_lista, fecha_hora) VALUES (?, ?, NOW())");
         $stmt_voto->bind_param("ii", $id_instancia, $id_lista);
@@ -75,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 // ==========================================
-// 5. OBTENER LISTAS Y SUS 3 CANDIDATOS
+// 4. OBTENER LISTAS Y SUS CANDIDATOS
 // ==========================================
 $listas = [];
 if ($instancia_activa) {
@@ -90,9 +61,8 @@ if ($instancia_activa) {
     while ($l = $res_l->fetch_assoc()) {
         $id_lista = $l['id_lista'];
         
-        // Consulta candidatos para los cargos 1 (Presidente), 2 (Secretario General) y 3 (Secretario de Finanzas)
         $sql_cand = "
-            SELECT c.nombre_cargo, a.nombre, a.apellido 
+            SELECT cpl.id_cargo, c.nombre_cargo, a.nombre, a.apellido 
             FROM cargos_por_lista cpl
             INNER JOIN cargos c ON cpl.id_cargo = c.id_cargo
             INNER JOIN alumnos a ON cpl.id_alumno = a.id_alumno
@@ -104,14 +74,21 @@ if ($instancia_activa) {
         $stmt_c->execute();
         $res_c = $stmt_c->get_result();
 
-        $candidatos = [];
+        $candidatos = [
+            1 => 'No asignado',
+            2 => 'No asignado',
+            3 => 'No asignado'
+        ];
+
         while ($cand = $res_c->fetch_assoc()) {
-            $candidatos[$cand['nombre_cargo']] = $cand['apellido'] . ', ' . $cand['nombre'];
+            $candidatos[$cand['id_cargo']] = $cand['apellido'] . ', ' . $cand['nombre'];
         }
 
         $l['candidatos'] = $candidatos;
         $listas[] = $l;
+        $stmt_c->close();
     }
+    $stmt_l->close();
 }
 ?>
 <!DOCTYPE html>
@@ -119,8 +96,7 @@ if ($instancia_activa) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Elegi a tu candidato/a</title>
-    <!-- Fuente Roboto -->
+    <title>Elegí a tu candidato/a</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
@@ -141,7 +117,6 @@ if ($instancia_activa) {
             flex-direction: column;
         }
 
-        /* Header Uniforme */
         .header-instancia {
             background-color: #1e293b;
             color: #ffffff;
@@ -173,7 +148,6 @@ if ($instancia_activa) {
             border-radius: 12px;
         }
 
-        /* Contenido Principal */
         .main-container {
             flex: 1;
             max-width: 1100px;
@@ -182,43 +156,6 @@ if ($instancia_activa) {
             padding: 30px 20px;
         }
 
-        .welcome-card {
-            background: #ffffff;
-            border-radius: 10px;
-            padding: 20px 30px;
-            margin-bottom: 30px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-            border-left: 5px solid #2563eb;
-        }
-
-        .welcome-card h2 {
-            font-size: 1.3rem;
-            color: #0f172a;
-            font-weight: 700;
-        }
-
-        .welcome-card p {
-            color: #64748b;
-            font-size: 0.95rem;
-            margin-top: 4px;
-        }
-
-        /* Mensaje de Espera cuando no hay alumno cargado */
-        .waiting-box {
-            background: #ffffff;
-            border-radius: 10px;
-            padding: 50px 20px;
-            text-align: center;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-        }
-
-        .waiting-box h3 {
-            color: #475569;
-            font-size: 1.2rem;
-            font-weight: 500;
-        }
-
-        /* Grid de Cards de Listas */
         .cards-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -297,7 +234,6 @@ if ($instancia_activa) {
             text-transform: uppercase;
         }
 
-        /* Botón Votar */
         .btn-votar {
             background-color: #2563eb;
             color: #ffffff;
@@ -315,7 +251,6 @@ if ($instancia_activa) {
             background-color: #1d4ed8;
         }
 
-        /* Modal de Confirmación */
         .modal-overlay {
             position: fixed;
             top: 0;
@@ -369,10 +304,6 @@ if ($instancia_activa) {
             cursor: pointer;
         }
 
-        .btn-aceptar:hover {
-            background-color: #15803d;
-        }
-
         .btn-cancelar {
             background-color: #ef4444;
             color: #ffffff;
@@ -385,11 +316,6 @@ if ($instancia_activa) {
             cursor: pointer;
         }
 
-        .btn-cancelar:hover {
-            background-color: #dc2626;
-        }
-
-        /* Pantalla de Agradecimiento */
         .thanks-box {
             background: #ffffff;
             border-radius: 12px;
@@ -429,7 +355,6 @@ if ($instancia_activa) {
 </head>
 <body>
 
-    <!-- Header Uniforme -->
     <header class="header-instancia">
         <div class="header-container">
             <span class="badge">Elección Activa</span>
@@ -448,59 +373,49 @@ if ($instancia_activa) {
     <main class="main-container">
 
         <?php if ($voto_registrado): ?>
-            <!-- Pantalla de Gracias tras Votar -->
             <div class="thanks-box">
-                <h2>¡Gracias <?php echo htmlspecialchars($nombre_votante); ?>!</h2>
+                <h2>¡Gracias por participar!</h2>
                 <p>Tu voto ha sido registrado correctamente en la urna digital.</p>
                 <a href="cuarto_oscuro.php" class="btn-reiniciar">Finalizar y Continuar</a>
             </div>
 
         <?php else: ?>
 
-            <!-- Mensaje de Bienvenida dinámico -->
-            <div class="welcome-card" id="welcome-container" style="display: none;">
-                <h2>Bienvenido/a: <span id="nombre-alumno"></span></h2>
-                <p>DNI: <span id="dni-alumno"></span> | Curso: <span id="curso-alumno"></span></p>
-            </div>
+            <div class="cards-grid">
+                <?php if (!empty($listas)): ?>
+                    <?php foreach ($listas as $lista): ?>
+                        <div class="lista-card">
+                            <img src="<?php echo !empty($lista['logo_url']) ? htmlspecialchars($lista['logo_url']) : 'https://via.placeholder.com/90?text=LOGO'; ?>" alt="Logo Lista" class="lista-logo">
+                            <span class="lista-num">Lista N° <?php echo htmlspecialchars($lista['numero_lista']); ?></span>
+                            <h3 class="lista-nombre"><?php echo htmlspecialchars($lista['nombre_lista']); ?></h3>
 
-            <!-- Caja de Espera si aún nadie fue habilitado afuera -->
-            <div class="waiting-box" id="waiting-container">
-                <h3>Esperando habilitación desde la mesa electoral...</h3>
-            </div>
+                            <div class="candidatos-list">
+                                <div class="candidato-item">
+                                    <span class="candidato-cargo">Presidente</span>
+                                    <?php echo htmlspecialchars($lista['candidatos'][1]); ?>
+                                </div>
+                                <div class="candidato-item">
+                                    <span class="candidato-cargo">Secretario General</span>
+                                    <?php echo htmlspecialchars($lista['candidatos'][2]); ?>
+                                </div>
+                                <div class="candidato-item">
+                                    <span class="candidato-cargo">Secretario de Finanzas</span>
+                                    <?php echo htmlspecialchars($lista['candidatos'][3]); ?>
+                                </div>
+                            </div>
 
-            <!-- Cards con las Listas Candidatas -->
-            <div class="cards-grid" id="listas-container" style="display: none;">
-                <?php foreach ($listas as $lista): ?>
-                    <div class="lista-card">
-                        <img src="<?php echo !empty($lista['logo_url']) ? htmlspecialchars($lista['logo_url']) : 'https://via.placeholder.com/90?text=LOGO'; ?>" alt="Logo Lista" class="lista-logo">
-                        <span class="lista-num">Lista N° <?php echo htmlspecialchars($lista['numero_lista']); ?></span>
-                        <h3 class="lista-nombre"><?php echo htmlspecialchars($lista['nombre_lista']); ?></h3>
-
-                        <div class="candidatos-list">
-                            <div class="candidato-item">
-                                <span class="candidato-cargo">Presidente</span>
-                                <?php echo htmlspecialchars($lista['candidatos']['Presidente'] ?? 'No asignado'); ?>
-                            </div>
-                            <div class="candidato-item">
-                                <span class="candidato-cargo">Secretario General</span>
-                                <?php echo htmlspecialchars($lista['candidatos']['Secretario General'] ?? 'No asignado'); ?>
-                            </div>
-                            <div class="candidato-item">
-                                <span class="candidato-cargo">Secretario de Finanzas</span>
-                                <?php echo htmlspecialchars($lista['candidatos']['Secretario de Finanzas'] ?? 'No asignado'); ?>
-                            </div>
+                            <button class="btn-votar" onclick="abrirModal(<?php echo $lista['id_lista']; ?>, '<?php echo htmlspecialchars(addslashes($lista['nombre_lista'])); ?>')">Votar</button>
                         </div>
-
-                        <button class="btn-votar" onclick="abrirModal(<?php echo $lista['id_lista']; ?>, '<?php echo htmlspecialchars(addslashes($lista['nombre_lista'])); ?>')">Votar</button>
-                    </div>
-                <?php endforeach; ?>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <p style="grid-column: 1 / -1; text-align: center;">No hay listas cargadas en la base de datos.</p>
+                <?php endif; ?>
             </div>
 
         <?php endif; ?>
 
     </main>
 
-    <!-- Modal de Confirmación -->
     <div class="modal-overlay" id="modalConfirmacion">
         <div class="modal-card">
             <h3>Confirmación de Voto</h3>
@@ -510,7 +425,6 @@ if ($instancia_activa) {
             <form action="cuarto_oscuro.php" method="POST">
                 <input type="hidden" name="action" value="confirmar_voto">
                 <input type="hidden" name="id_lista" id="modal-id-lista" value="0">
-                <input type="hidden" name="nombre_votante" id="modal-nombre-votante" value="">
 
                 <div class="modal-buttons">
                     <button type="submit" class="btn-aceptar">Aceptar</button>
@@ -521,44 +435,15 @@ if ($instancia_activa) {
     </div>
 
     <script>
-        let alumnoActual = null;
-
-        // Función para consultar via AJAX si hay un alumno cargado afuera
-        function verificarUltimoAlumno() {
-            fetch('cuarto_oscuro.php?check_alumno=1')
-                .then(response => response.json())
-                .then(result => {
-                    if (result.status === 'success') {
-                        alumnoActual = result.data;
-                        document.getElementById('nombre-alumno').innerText = alumnoActual.apellido + ', ' + alumnoActual.nombre;
-                        document.getElementById('dni-alumno').innerText = alumnoActual.dni;
-                        document.getElementById('curso-alumno').innerText = alumnoActual.curso + '° ' + alumnoActual.division + 'ª';
-
-                        document.getElementById('welcome-container').style.display = 'block';
-                        document.getElementById('listas-container').style.display = 'grid';
-                        document.getElementById('waiting-container').style.display = 'none';
-                    }
-                })
-                .catch(err => console.error("Error al consultar alumno:", err));
-        }
-
-        // Modal Handlers
         function abrirModal(idLista, nombreLista) {
             document.getElementById('modal-id-lista').value = idLista;
             document.getElementById('modal-nombre-lista').innerText = nombreLista;
-            document.getElementById('modal-nombre-votante').value = alumnoActual ? (alumnoActual.nombre + ' ' + alumnoActual.apellido) : 'Alumno';
             document.getElementById('modalConfirmacion').style.display = 'flex';
         }
 
         function cerrarModal() {
             document.getElementById('modalConfirmacion').style.display = 'none';
         }
-
-        // Consultar automáticamente cada 3 segundos
-        <?php if (!$voto_registrado): ?>
-            verificarUltimoAlumno();
-            setInterval(verificarUltimoAlumno, 3000);
-        <?php endif; ?>
     </script>
 </body>
 </html>
