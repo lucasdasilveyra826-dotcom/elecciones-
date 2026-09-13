@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Servidor: 127.0.0.1
--- Tiempo de generación: 13-09-2026 a las 23:32:32
+-- Tiempo de generación: 13-09-2026 a las 23:53:52
 -- Versión del servidor: 10.4.32-MariaDB
 -- Versión de PHP: 8.2.12
 
@@ -571,10 +571,13 @@ INSERT INTO `cargos_por_lista` (`id_cargo_lista`, `id_lista`, `id_cargo`, `id_al
 (23, 2, 5, 54),
 (24, 2, 6, 417),
 (25, 2, 7, 16),
-(26, 3, 1, 295),
-(27, 3, 4, 41),
-(28, 3, 5, 218),
-(29, 3, 7, 145);
+(33, 3, 1, 101),
+(34, 3, 2, 102),
+(35, 3, 3, 103),
+(36, 3, 4, 104),
+(37, 3, 5, 105),
+(38, 3, 6, 106),
+(39, 3, 7, 107);
 
 -- --------------------------------------------------------
 
@@ -1043,7 +1046,7 @@ INSERT INTO `padron_electoral` (`id_padron`, `id_instancia`, `id_alumno`, `estad
 (402, 1, 401, 0, 0, NULL, NULL),
 (403, 1, 402, 0, 0, NULL, NULL),
 (404, 1, 403, 0, 0, NULL, NULL),
-(405, 1, 404, 0, 1, '2026-09-13 18:30:08', '2026-09-13 18:12:14'),
+(405, 1, 404, 0, 1, '2026-09-13 18:44:36', '2026-09-13 18:12:14'),
 (406, 1, 405, 0, 0, NULL, NULL),
 (407, 1, 406, 0, 0, NULL, '2026-08-31 13:59:28'),
 (408, 1, 407, 0, 0, NULL, NULL),
@@ -1220,7 +1223,7 @@ ALTER TABLE `cargos`
 -- AUTO_INCREMENT de la tabla `cargos_por_lista`
 --
 ALTER TABLE `cargos_por_lista`
-  MODIFY `id_cargo_lista` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=30;
+  MODIFY `id_cargo_lista` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=40;
 
 --
 -- AUTO_INCREMENT de la tabla `instancia_electoral`
